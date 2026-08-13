@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Evil Egg</title>
 
-    <link rel="stylesheet" href="theme/love.css">
+    <link rel="stylesheet" href="./theme/love.css">
 
     <style>
         html, body {
@@ -32,8 +32,7 @@
             color: white;
             background: #000;
             font: 16px sans-serif;
-            z-index: 10;
-            pointer-events: none;
+            z-index: 100;
         }
 
         #message-container {
@@ -51,47 +50,92 @@
     <canvas id="canvas" tabindex="0"></canvas>
 
     <script>
-    (async () => {
+    (async function () {
+        const status = document.getElementById("status");
+
         try {
-            // Register the service worker so game.data can be assembled
-            // from game.part1, game.part2 and game.part3.
-            await navigator.serviceWorker.register("./sw.js", {
-                scope: "./"
-            });
+            /*
+             * Register the service worker.
+             * It combines game.part1 + game.part2 + game.part3
+             * into the game.data request expected by LÖVE.
+             */
+            const registration =
+                await navigator.serviceWorker.register("./sw.js", {
+                    scope: "./"
+                });
 
             await navigator.serviceWorker.ready;
 
-            // The service worker needs to control the page before love.js
-            // attempts to download game.data.
+            /*
+             * On the very first visit, the newly-installed service
+             * worker may not control this page yet.
+             *
+             * Reload exactly once so it becomes the controller.
+             */
             if (!navigator.serviceWorker.controller) {
-                location.reload();
-                return;
+                if (!sessionStorage.getItem("evilEggSWReloaded")) {
+                    sessionStorage.setItem("evilEggSWReloaded", "1");
+                    location.reload();
+                    return;
+                }
+
+                throw new Error(
+                    "Service worker failed to take control of the page."
+                );
             }
 
-            const loadScript = (src) => new Promise((resolve, reject) => {
-                const script = document.createElement("script");
+            sessionStorage.removeItem("evilEggSWReloaded");
 
-                script.src = src;
-                script.onload = resolve;
-                script.onerror = () => reject(
-                    new Error("Failed to load " + src)
-                );
+            function loadScript(src) {
+                return new Promise(function (resolve, reject) {
+                    const script = document.createElement("script");
 
-                document.body.appendChild(script);
-            });
+                    script.src = src;
 
+                    script.onload = function () {
+                        resolve();
+                    };
+
+                    script.onerror = function () {
+                        reject(
+                            new Error("Could not load " + src)
+                        );
+                    };
+
+                    document.body.appendChild(script);
+                });
+            }
+
+            /*
+             * LÖVE runtime.
+             */
             await loadScript("./love.js");
+
+            /*
+             * Generated Emscripten/LÖVE loader.
+             */
             await loadScript("./game.js");
 
+            /*
+             * Give the runtime a moment to initialize, then remove
+             * our HTML loading overlay.
+             */
+            setTimeout(function () {
+                status.style.display = "none";
+
+                const canvas = document.getElementById("canvas");
+                if (canvas) {
+                    canvas.focus();
+                }
+            }, 500);
+
         } catch (error) {
-            console.error(error);
+            console.error("Evil Egg failed to start:", error);
 
-            const status = document.getElementById("status");
+            status.textContent =
+                "Evil Egg failed to load: " + error.message;
 
-            if (status) {
-                status.textContent = "Load failed: " + error.message;
-                status.style.pointerEvents = "auto";
-            }
+            status.style.color = "#ff5555";
         }
     })();
     </script>
