@@ -50,32 +50,18 @@
 <canvas id="canvas" tabindex="0"></canvas>
 
 <script>
-
 function setFocus() {
     const canvas = document.getElementById("canvas");
-
-    if (canvas) {
-        canvas.focus();
-    }
+    if (canvas) canvas.focus();
 }
-
 
 function drawLoadingStatus(text, soFar, total) {
     const status = document.getElementById("status");
 
     if (!status) return;
 
-    if (total && soFar !== undefined) {
-        const percent = Math.round((soFar / total) * 100);
-
-        status.textContent =
-            text + " " + percent + "%";
-    } else {
-        status.textContent =
-            text || "Loading Evil Egg...";
-    }
+    status.textContent = text || "Loading Evil Egg...";
 }
-
 
 function onException(error) {
     console.error("LÖVE exception:", error);
@@ -85,16 +71,53 @@ function onException(error) {
     if (status) {
         status.textContent =
             "Game error: " +
-            (error && error.message
-                ? error.message
-                : error);
+            (error?.message || error);
     }
 }
 
+/*
+ * IMPORTANT:
+ * Module must exist BEFORE love.js/game.js are loaded.
+ */
+var Module = {
+    arguments: ["/game.love"],
 
-(async function () {
+    canvas: document.getElementById("canvas"),
 
-    const status = document.getElementById("status");
+    printErr: function(text) {
+        console.error("[LÖVE]", text);
+    },
+
+    setStatus: function(text) {
+        drawLoadingStatus(text);
+    },
+
+    setFocus: setFocus,
+
+    setExceptionMessage: onException,
+
+    onRuntimeInitialized: function() {
+        console.log("[Evil Egg] LÖVE runtime initialized.");
+
+        window.addEventListener("focus", function() {
+            if (typeof Module._love_setFocus === "function") {
+                Module._love_setFocus(true);
+            }
+        });
+
+        window.addEventListener("blur", function() {
+            if (typeof Module._love_setFocus === "function") {
+                Module._love_setFocus(false);
+            }
+        });
+    }
+};
+
+
+/*
+ * Register service worker FIRST.
+ */
+(async function() {
 
     try {
 
@@ -107,10 +130,10 @@ function onException(error) {
 
         if (!navigator.serviceWorker.controller) {
 
-            if (!sessionStorage.getItem("evilEggSWReloaded")) {
+            if (!sessionStorage.getItem("evilEggReload")) {
 
                 sessionStorage.setItem(
-                    "evilEggSWReloaded",
+                    "evilEggReload",
                     "1"
                 );
 
@@ -120,64 +143,88 @@ function onException(error) {
             }
 
             throw new Error(
-                "Service worker failed to take control."
+                "Service worker is not controlling the page."
             );
         }
 
+        sessionStorage.removeItem("evilEggReload");
 
-        sessionStorage.removeItem(
-            "evilEggSWReloaded"
+
+        /*
+         * Load love.js.
+         */
+        const loveScript =
+            document.createElement("script");
+
+        loveScript.src = "./love.js";
+
+        loveScript.onload = function() {
+
+            console.log(
+                "[Evil Egg] love.js loaded."
+            );
+
+
+            /*
+             * Then load game.js.
+             */
+            const gameScript =
+                document.createElement("script");
+
+            gameScript.src = "./game.js";
+
+            gameScript.onload = function() {
+
+                console.log(
+                    "[Evil Egg] game.js loaded."
+                );
+
+            };
+
+            gameScript.onerror = function() {
+
+                throw new Error(
+                    "Failed to load game.js"
+                );
+
+            };
+
+            document.body.appendChild(
+                gameScript
+            );
+        };
+
+
+        loveScript.onerror = function() {
+
+            throw new Error(
+                "Failed to load love.js"
+            );
+
+        };
+
+
+        document.body.appendChild(
+            loveScript
         );
-
-
-        function loadScript(src) {
-
-            return new Promise(function (
-                resolve,
-                reject
-            ) {
-
-                const script =
-                    document.createElement("script");
-
-                script.src = src;
-
-                script.onload = resolve;
-
-                script.onerror = function () {
-                    reject(
-                        new Error(
-                            "Could not load " + src
-                        )
-                    );
-                };
-
-                document.body.appendChild(script);
-            });
-        }
-
-
-        await loadScript("./love.js");
-
-        await loadScript("./game.js");
 
 
     } catch (error) {
 
         console.error(
-            "Evil Egg failed to start:",
+            "[Evil Egg] Startup error:",
             error
         );
 
-        status.textContent =
-            "Evil Egg failed to load: " +
+        document.getElementById(
+            "status"
+        ).textContent =
+            "Startup failed: " +
             error.message;
 
-        status.style.color = "#ff5555";
     }
 
 })();
-
 </script>
 
 </body>
