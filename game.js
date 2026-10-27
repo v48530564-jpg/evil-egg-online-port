@@ -6,6 +6,8 @@
  * assembled by the service worker from game.part1/2/3.
  */
 
+console.log("[Evil Egg] loader build: lua-paths-20261027-3");
+
 /*
  * The bundled Lua compatibility modules were packed with dotted filenames.
  * Lua resolves require("table.clear") as table/clear.lua (and likewise new).

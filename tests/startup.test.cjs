@@ -19,14 +19,15 @@ function emptyArchive() {
 function browser(options = {}) {
     const status = { textContent: 'Loading Evil Egg...', style: {} };
     const listeners = {};
+    const scripts = [];
     const canvas = { addEventListener() {}, focus() { canvas.focused = true; } };
     const context = {
-        console: { log() {}, error() {} },
+        console: { log() {}, info() {}, error() {} },
         Uint8Array,
         document: {
             getElementById: id => id === 'status' ? status : canvas,
             createElement: () => ({}),
-            body: { appendChild(script) { queueMicrotask(() => script.onload()); } }
+            body: { appendChild(script) { scripts.push(script.src); queueMicrotask(() => script.onload()); } }
         },
         window: { addEventListener(name, callback) { listeners[name] = callback; } },
         navigator: options.noServiceWorker ? {} : {
@@ -43,7 +44,7 @@ function browser(options = {}) {
     };
     vm.createContext(context);
     vm.runInContext(pageScript, context);
-    return { context, status, canvas, listeners };
+    return { context, status, canvas, listeners, scripts };
 }
 
 function start(game, options = {}) {
@@ -81,6 +82,15 @@ test('successful startup installs the archive and uncovers the canvas', async ()
     assert.equal(state.dependencies, 0);
     assert.equal(game.status.style.display, 'none');
     assert.equal(game.canvas.focused, true);
+});
+
+test('page requests both scripts with the current build version', async () => {
+    const game = browser();
+    await flush();
+    assert.deepEqual(game.scripts, [
+        './love.js?v=' + game.context.GAME_BUILD,
+        './game.js?v=' + game.context.GAME_BUILD
+    ]);
 });
 
 test('HTTP errors remain visible and prevent game startup', async () => {

@@ -18,6 +18,8 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
 <div id="message-container"></div>
 <canvas id="canvas" tabindex="0"></canvas>
 <script>
+var GAME_BUILD="lua-paths-20261027-3";
+console.info("[Evil Egg] web build:",GAME_BUILD);
 var hasGameError=false;
 function setFocus(){
   var c=document.getElementById("canvas");
@@ -61,7 +63,7 @@ Promise.resolve().then(function(){
   }
   return new Promise(function(resolve,reject){
     var s=document.createElement("script");
-    s.src="./love.js";
+    s.src="./love.js?v="+GAME_BUILD;
     s.onload=resolve;
     s.onerror=function(){reject(new Error("Failed to load love.js"));};
     document.body.appendChild(s);
@@ -70,7 +72,7 @@ Promise.resolve().then(function(){
 .then(function(){
   return new Promise(function(resolve,reject){
     var s=document.createElement("script");
-    s.src="./game.js";
+    s.src="./game.js?v="+GAME_BUILD;
     s.onload=resolve;
     s.onerror=function(){reject(new Error("Failed to load game.js"));};
     document.body.appendChild(s);
