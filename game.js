@@ -32,12 +32,11 @@ var Module = {
     setFocus: setFocus,
 
     setStatus: function (text, soFar, total) {
-        if (text) {
-            drawLoadingStatus(text, soFar, total);
-        }
+        drawLoadingStatus(text, soFar, total);
     },
 
     setExceptionMessage: onException,
+    onAbort: onException,
 
     onRuntimeInitialized: function () {
         console.log("[Evil Egg] LÖVE runtime initialized.");
@@ -58,7 +57,7 @@ var Module = {
 
 
 /*
- * Emscripten calls preRun functions after the runtime has initialized.
+ * Emscripten calls preRun functions before starting the game.
  * We add a run dependency so it waits for game.data to arrive.
  */
 Module.preRun = Module.preRun || [];
@@ -123,14 +122,14 @@ Module.preRun.push(function () {
         console.log("[Evil Egg] /game.love installed.");
 
         Module.setStatus("Starting Evil Egg...");
+
+        // Only start the game after its archive has been installed.
+        Module.removeRunDependency(dependency);
     })
     .catch(function (error) {
         console.error("[Evil Egg] game.data failed:", error);
 
         onException(error);
-    })
-    .finally(function () {
-        Module.removeRunDependency(dependency);
     });
 });
 
@@ -144,4 +143,4 @@ if (typeof Love !== "function") {
     );
 }
 
-Love(Module);
+Love(Module).catch(onException);
