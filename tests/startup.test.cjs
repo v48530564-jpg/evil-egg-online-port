@@ -20,7 +20,11 @@ function browser(options = {}) {
     const status = { textContent: 'Loading Evil Egg...', style: {} };
     const listeners = {};
     const scripts = [];
-    const canvas = { addEventListener() {}, focus() { canvas.focused = true; } };
+    const canvas = {
+        listeners: {},
+        addEventListener(name, callback) { canvas.listeners[name] = callback; },
+        focus() { canvas.focused = true; }
+    };
     const context = {
         console: { log() {}, info() {}, error() {} },
         Uint8Array,
@@ -83,6 +87,20 @@ test('successful startup installs the archive and uncovers the canvas', async ()
     assert.equal(state.dependencies, 0);
     assert.equal(game.status.style.display, 'none');
     assert.equal(game.canvas.focused, true);
+});
+
+test('right-click blocks the canvas context menu without swallowing mouse input', async () => {
+    const game = browser();
+    start(game);
+    await flush();
+    let prevented = false;
+    game.canvas.focused = false;
+    game.canvas.listeners.contextmenu({ preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.equal(game.canvas.focused, true);
+    assert.equal(game.canvas.listeners.mousedown, undefined);
+    assert.equal(game.canvas.listeners.mouseup, undefined);
+    assert.equal(game.listeners.contextmenu, undefined);
 });
 
 test('page requests both scripts with the current build version', async () => {

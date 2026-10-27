@@ -135,7 +135,7 @@ function love.run() return function() return 0 end end
         repair = repair.replace("process.stdout.write(context.fixTableModulePaths(bytes));", "context.fixLua51Labels(context.fixTableModulePaths(bytes)).then(b => process.stdout.write(b));")
         result = subprocess.run(["node", "-e", repair], input=self.original,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, check=True)
-        changed = {"filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag"}
+        changed = {"filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag", "usersettings.lua"}
         with zipfile.ZipFile(io.BytesIO(self.original)) as before, zipfile.ZipFile(io.BytesIO(result.stdout)) as after:
             self.assertIsNone(after.testzip())
             self.assertEqual(len(after.infolist()), len(before.infolist()))
@@ -150,6 +150,9 @@ function love.run() return function() return 0 end end
                     if entry.filename == "graphics.lua":
                         expected = expected.replace(b"local try_readback = true", b"local try_readback = false")
                     self.assertEqual(new, expected, entry.filename)
+                elif entry.filename == 'usersettings.lua':
+                    self.assertIn(b'fullscreen = false,', new)
+                    self.assertIn(b'self.fullscreen = false -- Start in the tab', new)
                 elif entry.filename.startswith('shader/'):
                     self.assertNotEqual(new, old)
                     if entry.filename.endswith('.lua'): self.assertIn(b'shader.prepare', new)
@@ -197,6 +200,42 @@ function love.run() return function() return 0 end end
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=ROOT, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout.decode(errors='replace'))
         self.assertIn(b'PASS: compiled 351 Lua files', result.stdout)
+
+
+    def test_web_starts_windowed_with_old_saved_fullscreen_and_allows_toggle(self):
+        main = r"""
+local requested, saved
+package.preload['_usersettings'] = function() return {fullscreen=true} end
+conf = {should_platform_force_fullscreen=function() return false end}
+love.window = {
+ setFullscreen=function(value) requested=value end,
+ setVSync=function() end
+}
+local settings = require 'usersettings'
+settings.save = function(self) saved=self.fullscreen end
+settings:initial_load()
+assert(settings.fullscreen == false, 'Saved fullscreen must not force startup fullscreen')
+assert(requested == false and saved == false)
+settings.fullscreen=true
+settings:apply_settings()
+assert(requested == true, 'Explicit fullscreen must remain available')
+settings.fullscreen=false
+settings:apply_settings()
+assert(requested == false)
+print('PASS: windowed startup and optional fullscreen')
+function love.run() return function() return 0 end end
+"""
+        output = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(self.original)) as original, zipfile.ZipFile(output, 'w') as smoke:
+            for entry in original.infolist():
+                data=original.read(entry)
+                if entry.filename=='main.lua': data=main.encode()
+                if entry.filename=='conf.lua': data=b'function love.conf(t) t.window=false; for k in pairs(t.modules) do t.modules[k]=false end end'
+                smoke.writestr(entry,data)
+        result=subprocess.run(['node','tests/love-modules.cjs','--loader'], input=output.getvalue(),
+                              stdout=subprocess.PIPE,stderr=subprocess.STDOUT,cwd=ROOT,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout.decode(errors='replace'))
+        self.assertIn(b'PASS: windowed startup and optional fullscreen',result.stdout)
 
 
 if __name__ == "__main__":
