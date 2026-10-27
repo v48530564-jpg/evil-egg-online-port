@@ -10,6 +10,12 @@ const pageScript = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const gameScript = fs.readFileSync(path.join(root, 'game.js'), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
+function emptyArchive() {
+    const buffer = new ArrayBuffer(57602080);
+    new DataView(buffer).setUint32(buffer.byteLength - 22, 0x06054b50, true);
+    return buffer;
+}
+
 function browser(options = {}) {
     const status = { textContent: 'Loading Evil Egg...', style: {} };
     const listeners = {};
@@ -32,7 +38,7 @@ function browser(options = {}) {
         },
         fetch: options.fetch || (() => Promise.resolve({
             ok: true,
-            arrayBuffer: () => Promise.resolve(new ArrayBuffer(57602080))
+            arrayBuffer: () => Promise.resolve(emptyArchive())
         }))
     };
     vm.createContext(context);
