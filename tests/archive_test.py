@@ -130,5 +130,68 @@ function love.run() return function() return 0 end end
         self.assertIn(b"PASS: table modules load and work", result.stdout)
 
 
+    def test_lua51_archive_integrity(self):
+        repair = NORMALIZE.replace("const context = {};", "const context = {Blob, Response, DecompressionStream, TextEncoder, TextDecoder};")
+        repair = repair.replace("process.stdout.write(context.fixTableModulePaths(bytes));", "context.fixLua51Labels(context.fixTableModulePaths(bytes)).then(b => process.stdout.write(b));")
+        result = subprocess.run(["node", "-e", repair], input=self.original,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, check=True)
+        changed = {"filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua"}
+        with zipfile.ZipFile(io.BytesIO(self.original)) as before, zipfile.ZipFile(io.BytesIO(result.stdout)) as after:
+            self.assertIsNone(after.testzip())
+            self.assertEqual(len(after.infolist()), len(before.infolist()))
+            for entry in before.infolist():
+                old = before.read(entry)
+                new = after.read(REPLACEMENTS.get(entry.filename, entry.filename))
+                if entry.filename not in changed:
+                    self.assertEqual(new, old, entry.filename)
+                elif entry.filename != "lib/gen/curry.lua":
+                    import re
+                    expected = re.sub(rb"^[\t ]*::continue::[\t ]*\r?$", lambda m: re.sub(rb"[^\r\n]", b" ", m[0]), old, flags=re.M)
+                    self.assertEqual(new, expected, entry.filename)
+                else:
+                    self.assertIn(b"make_curry", new)
+
+    def test_all_lua_sources_compile_and_compatibility_helpers_work(self):
+        main = r"""
+local count = 0
+local function scan(path)
+    for _, name in ipairs(love.filesystem.getDirectoryItems(path)) do
+        local p = path == '' and name or path .. '/' .. name
+        if love.filesystem.getInfo(p).type == 'directory' then scan(p)
+        elseif p:sub(-4) == '.lua' then
+            assert(loadstring(love.filesystem.read(p), '@' .. p))
+            count = count + 1
+        end
+    end
+end
+scan('')
+local filesystem = require 'filesystem'
+assert(type(filesystem.get_modules) == 'function')
+require 'lib.gen.curry'
+local branch = curry3(function(...) return select('#', ...), ... end)(1)
+local n, a, b, c = branch(nil)(3)
+assert(n == 3 and a == 1 and b == nil and c == 3)
+assert(branch(4)(5) == 3)
+local n, a, b, c, d = curry2(function(...) return select('#', ...), ... end)(nil)(2, nil, 4)
+assert(n == 4 and a == nil and b == 2 and c == nil and d == 4)
+local step = curry59(function(...) local sum=0; for i=1,select('#',...) do sum=sum+select(i,...) end; return sum end)
+for i=1,59 do step=step(i) end
+assert(step == 1770)
+print('PASS: compiled ' .. count .. ' Lua files and tested filesystem/curry helpers')
+function love.run() return function() return 0 end end
+"""
+        output = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(self.original)) as original, zipfile.ZipFile(output, "w") as smoke:
+            for entry in original.infolist():
+                data = original.read(entry)
+                if entry.filename == 'main.lua': data = main.encode()
+                if entry.filename == 'conf.lua': data = b'function love.conf(t) t.window=false; for k in pairs(t.modules) do t.modules[k]=false end end'
+                smoke.writestr(entry, data)
+        result = subprocess.run(["node", "tests/love-modules.cjs", "--loader"], input=output.getvalue(),
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=ROOT, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout.decode(errors='replace'))
+        self.assertIn(b'PASS: compiled 351 Lua files', result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

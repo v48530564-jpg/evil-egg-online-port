@@ -1,3 +1,4 @@
+process.on('uncaughtException', error => { console.error(error.message); process.exitCode = 1; });
 // Run a small .love archive from stdin in the actual bundled Lua runtime.
 // Graphics are disabled by the fixture. Browser IndexedDB persistence is
 // bypassed here because this regression test runs in Node, not a browser.
@@ -13,7 +14,7 @@ runtime = runtime.slice(0, start) + runtime.slice(end);
 
 const context = {
     console, require, process, setTimeout, clearTimeout, TextDecoder, TextEncoder,
-    URL, URLSearchParams, WebAssembly, Uint8Array, ArrayBuffer, Promise,
+    Blob, Response, DecompressionStream, performance, URL, URLSearchParams, WebAssembly, Uint8Array, ArrayBuffer, Promise,
     __dirname: process.cwd(),
     __filename: path.resolve('love.js'),
     window: {
