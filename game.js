@@ -6,7 +6,7 @@
  * assembled by the service worker from game.part1/2/3.
  */
 
-console.log("[Evil Egg] loader build: lua51-20261027-4");
+console.log("[Evil Egg] loader build: webgl-20261027-5");
 
 /*
  * The bundled Lua compatibility modules were packed with dotted filenames.
@@ -69,7 +69,7 @@ function fixTableModulePaths(bytes) {
     return bytes;
 }
 
-// Repair LuaJIT syntax and generated helpers for the Lua 5.1 web runtime.
+// Repair Lua syntax, generated helpers, and desktop-only graphics assumptions.
 // Only replacement entries are appended; all original asset payloads stay intact.
 async function fixLua51Labels(bytes) {
     var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -78,7 +78,7 @@ async function fixLua51Labels(bytes) {
     if (end < 0) throw new Error("Missing ZIP directory");
     var start = view.getUint32(end + 16, true);
     var count = view.getUint16(end + 10, true);
-    var targets = new Set(["filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua"]);
+    var targets = new Set(["filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag"]);
     var records = [], additions = [], cursor = start, offset = start;
     for (var n = 0; n < count; n++) {
         if (view.getUint32(cursor, true) !== 0x02014b50) throw new Error("Invalid ZIP directory entry");
@@ -125,6 +125,44 @@ end
 for n = 2, 59 do _G['curry' .. n] = make_curry(n) end
 `;
             }
+            if (name === "graphics.lua") {
+                // CPU ImageData is already the supported fallback in this loader.
+                patched = patched.replace("local try_readback = true", "local try_readback = false");
+            }
+            if (name === "shader/decode_palette.frag") {
+                patched = patched.replace("int(mod(int(index) + palette_offset + 0.5, palette_size))",
+                    "int(mod(floor(index) + float(palette_offset) + 0.5, float(palette_size)))");
+            }
+            if (name === "shader/decode_palette_with_image.frag") {
+                patched = patched.replace("0.5 + int(mod(int(index) + palette_offset, palette_size))",
+                    "0.5 + mod(floor(index) + float(palette_offset), float(palette_size))")
+                    .replace("i / palette_size", "i / float(palette_size)");
+            }
+            if (name === "shader/bloom.frag") {
+                patched = patched.replace("sum / (samples * samples)", "sum / float(samples * samples)");
+            }
+            if (name === "shader/shader.lua") {
+                patched = patched.replace("local shader = {}", `local shader = {}
+
+-- GLSL ES forbids uniform initializers. Keep their defaults on the Lua side.
+function shader.prepare(source)
+    local defaults = {}
+    source = source:gsub('uniform%s+(%w+)%s+([%w_]+)%s*=%s*([%+%-]?[%d%.]+)%s*;', function(kind, key, value)
+        assert(kind == 'float' or kind == 'int', 'Unsupported uniform default: ' .. key)
+        defaults[key] = assert(tonumber(value))
+        return 'uniform ' .. kind .. ' ' .. key .. ';'
+    end)
+    return source, defaults
+end
+`.replace(/^\+/gm, ""));
+                patched = patched.replace("shader[name] = love.graphics.new_shader(v)", `local source = assert(love.filesystem.read(v))
+        local code, defaults = shader.prepare(source)
+        local compiled = assert(love.graphics.new_shader(code), 'Failed to compile shader: ' .. v)
+        for key, value in pairs(defaults) do
+            if compiled:hasUniform(key) then compiled:send(key, value) end
+        end
+        shader[name] = compiled`.replace(/^\+/gm, ""));
+            }
             if (patched !== source) {
                 var data = new TextEncoder().encode(patched);
                 var crc = -1;
@@ -144,14 +182,14 @@ for n = 2, 59 do _G['curry' .. n] = make_curry(n) end
                 header.set(bytes.subarray(cursor + 46, cursor + 46 + nameLength), 30);
                 var r = new DataView(record.buffer);
                 r.setUint16(8, 0, true); // No data descriptor or encryption.
-                r.setUint16(10, 0, true); // Store corrected Lua source uncompressed.
+                r.setUint16(10, 0, true); // Store corrected source uncompressed.
                 r.setUint32(16, crc, true);
                 r.setUint32(20, data.length, true);
                 r.setUint32(24, data.length, true);
                 r.setUint32(42, offset, true);
                 additions.push(header, data);
                 offset += header.length + data.length;
-                console.log("[Evil Egg] Lua 5.1 compatibility:", name);
+                console.log("[Evil Egg] web compatibility:", name);
             }
         }
         records.push(record);
