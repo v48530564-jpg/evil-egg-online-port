@@ -24,6 +24,7 @@ function browser(options = {}) {
     const context = {
         console: { log() {}, info() {}, error() {} },
         Uint8Array,
+        TextDecoder, TextEncoder,
         document: {
             getElementById: id => id === 'status' ? status : canvas,
             createElement: () => ({}),
