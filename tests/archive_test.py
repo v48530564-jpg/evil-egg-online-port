@@ -135,7 +135,7 @@ function love.run() return function() return 0 end end
         repair = repair.replace("process.stdout.write(context.fixTableModulePaths(bytes));", "context.fixLua51Labels(context.fixTableModulePaths(bytes)).then(b => process.stdout.write(b));")
         result = subprocess.run(["node", "-e", repair], input=self.original,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT, check=True)
-        changed = {"filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag", "usersettings.lua"}
+        changed = {"filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag", "usersettings.lua", "main.lua", "lib/bump.lua", "world/MainMenuWorld.lua"}
         with zipfile.ZipFile(io.BytesIO(self.original)) as before, zipfile.ZipFile(io.BytesIO(result.stdout)) as after:
             self.assertIsNone(after.testzip())
             self.assertEqual(len(after.infolist()), len(before.infolist()))
@@ -144,15 +144,29 @@ function love.run() return function() return 0 end end
                 new = after.read(REPLACEMENTS.get(entry.filename, entry.filename))
                 if entry.filename not in changed:
                     self.assertEqual(new, old, entry.filename)
-                elif entry.filename in ("filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua"):
+                elif entry.filename in ("filesystem.lua", "lib/anim.lua", "world/GameWorld.lua"):
                     import re
                     expected = re.sub(rb"^[\t ]*::continue::[\t ]*\r?$", lambda m: re.sub(rb"[^\r\n]", b" ", m[0]), old, flags=re.M)
-                    if entry.filename == "graphics.lua":
-                        expected = expected.replace(b"local try_readback = true", b"local try_readback = false")
                     self.assertEqual(new, expected, entry.filename)
+                elif entry.filename == 'graphics.lua':
+                    self.assertIn(b'local try_readback = false', new)
+                    self.assertIn(b'graphics.set_screen_shaders(nil)', new)
+                    self.assertIn(b'canvas:release()', new)
+                elif entry.filename == 'main.lua':
+                    self.assertNotIn(b'if conf.manual_gc then manual_gc(0.001, math.huge, false) end', new)
+                elif entry.filename == 'lib/bump.lua':
+                    self.assertIn(b'layerMaskCache', new)
+                elif entry.filename == 'world/MainMenuWorld.lua':
+                    self.assertIn(b'(online port by flight)', new)
                 elif entry.filename == 'usersettings.lua':
                     self.assertIn(b'fullscreen = false,', new)
                     self.assertIn(b'self.fullscreen = false -- Start in the tab', new)
+                    # This update must not introduce any new settings defaults.
+                    import re
+                    expected=old.replace(b'fullscreen = true,', b'fullscreen = false,', 1)
+                    expected=re.sub(rb'(function usersettings:initial_load\(\)\r?\n[\t ]*self:load\(\))',
+                                    lambda m: m[0]+b'\n    self.fullscreen = false -- Start in the tab, including with older saved settings.', expected, count=1)
+                    self.assertEqual(new,expected)
                 elif entry.filename.startswith('shader/'):
                     self.assertNotEqual(new, old)
                     if entry.filename.endswith('.lua'): self.assertIn(b'shader.prepare', new)

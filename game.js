@@ -6,7 +6,7 @@
  * assembled by the service worker from game.part1/2/3.
  */
 
-console.log("[Evil Egg] loader build: input-20261027-6");
+console.log("[Evil Egg] loader build: performance-20261027-7");
 
 /*
  * The bundled Lua compatibility modules were packed with dotted filenames.
@@ -78,7 +78,7 @@ async function fixLua51Labels(bytes) {
     if (end < 0) throw new Error("Missing ZIP directory");
     var start = view.getUint32(end + 16, true);
     var count = view.getUint16(end + 10, true);
-    var targets = new Set(["filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag", "usersettings.lua"]);
+    var targets = new Set(["filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag", "usersettings.lua", "main.lua", "lib/bump.lua", "world/MainMenuWorld.lua"]);
     var records = [], additions = [], cursor = start, offset = start;
     for (var n = 0; n < count; n++) {
         if (view.getUint32(cursor, true) !== 0x02014b50) throw new Error("Invalid ZIP directory entry");
@@ -129,7 +129,44 @@ for n = 2, 59 do _G['curry' .. n] = make_curry(n) end
                 patched = patched.replace("fullscreen = true,", "fullscreen = false,")
                     .replace(/(function usersettings:initial_load\(\)\r?\n[\t ]*self:load\(\))/, "$1\n    self.fullscreen = false -- Start in the tab, including with older saved settings.");
             }
+            if (name === "main.lua") {
+                patched = patched.replace("if conf.manual_gc then manual_gc(0.001, math.huge, false) end",
+                    "-- Use automatic Lua GC instead of a forced collection-work loop every frame.");
+            }
+            if (name === "lib/bump.lua") {
+                patched = patched.replace(/local function getLayerIdsFromBits\(bits\)[\s\S]*?\r?\nend/, `local layerMaskCache, layerMaskCacheCount = {}, 0
+local function getLayerIdsFromBits(bits)
+    bits = bits % 4294967296
+    local cached = layerMaskCache[bits]
+    if cached then return cached end
+    local layerIds, remaining, layerId = {}, bits, 1
+    while remaining ~= 0 do
+        if remaining % 2 ~= 0 then layerIds[#layerIds + 1] = layerId end
+        remaining = floor(remaining / 2)
+        layerId = layerId + 1
+    end
+    -- Masks have only 32 bits; bound storage even for arbitrary user masks.
+    if layerMaskCacheCount >= 128 then layerMaskCache, layerMaskCacheCount = {}, 0 end
+    layerMaskCache[bits] = layerIds
+    layerMaskCacheCount = layerMaskCacheCount + 1
+    return layerIds
+end`);
+                patched = patched.replace(/local function getPopulatedMaskLayerIds\(bits, _\)[\s\S]*?\r?\nend/,
+                    "local function getPopulatedMaskLayerIds(bits, _)\n    return getLayerIdsFromBits(bits)\nend");
+            }
+            if (name === "world/MainMenuWorld.lua") {
+                patched = patched.replace("local VERSION_PALETTE =", 'local WEB_VERSION_LABEL = GAME_VERSION .. " (online port by flight)"\nlocal VERSION_PALETTE =')
+                    .replace("graphics.printp_right_aligned(GAME_VERSION, font, VERSION_PALETTE", "graphics.printp_right_aligned(WEB_VERSION_LABEL, font, VERSION_PALETTE");
+            }
             if (name === "graphics.lua") {
+                patched = patched.replace("function graphics.set_screen_shader_from_preset(preset)", `function graphics.set_screen_shader_from_preset(preset)
+    if preset == "shader_preset_none" then
+        if graphics.current_screen_shader_preset ~= preset then graphics.set_screen_shaders(nil) end
+        graphics.current_screen_shader_preset = preset
+        return
+    end`);
+                patched = patched.replace("function graphics.set_screen_shaders(shaders)", `function graphics.set_screen_shaders(shaders)
+    for _, canvas in pairs(graphics.screen_shader_canvases) do canvas:release() end`);
                 // CPU ImageData is already the supported fallback in this loader.
                 patched = patched.replace("local try_readback = true", "local try_readback = false");
             }
