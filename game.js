@@ -6,7 +6,7 @@
  * assembled by the service worker from game.part1/2/3.
  */
 
-console.log("[Evil Egg] loader build: webgl-20261027-5");
+console.log("[Evil Egg] loader build: input-20261027-6");
 
 /*
  * The bundled Lua compatibility modules were packed with dotted filenames.
@@ -78,7 +78,7 @@ async function fixLua51Labels(bytes) {
     if (end < 0) throw new Error("Missing ZIP directory");
     var start = view.getUint32(end + 16, true);
     var count = view.getUint16(end + 10, true);
-    var targets = new Set(["filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag"]);
+    var targets = new Set(["filesystem.lua", "graphics.lua", "lib/anim.lua", "world/GameWorld.lua", "lib/gen/curry.lua", "shader/shader.lua", "shader/decode_palette.frag", "shader/decode_palette_with_image.frag", "shader/bloom.frag", "usersettings.lua"]);
     var records = [], additions = [], cursor = start, offset = start;
     for (var n = 0; n < count; n++) {
         if (view.getUint32(cursor, true) !== 0x02014b50) throw new Error("Invalid ZIP directory entry");
@@ -124,6 +124,10 @@ local function make_curry(n)
 end
 for n = 2, 59 do _G['curry' .. n] = make_curry(n) end
 `;
+            }
+            if (name === "usersettings.lua") {
+                patched = patched.replace("fullscreen = true,", "fullscreen = false,")
+                    .replace(/(function usersettings:initial_load\(\)\r?\n[\t ]*self:load\(\))/, "$1\n    self.fullscreen = false -- Start in the tab, including with older saved settings.");
             }
             if (name === "graphics.lua") {
                 // CPU ImageData is already the supported fallback in this loader.
@@ -217,6 +221,11 @@ var Module = {
         if (!canvas) {
             throw new Error("Evil Egg: #canvas was not found.");
         }
+
+        canvas.addEventListener("contextmenu", function (event) {
+            event.preventDefault();
+            setFocus();
+        });
 
         canvas.addEventListener("webglcontextlost", function (e) {
             e.preventDefault();
