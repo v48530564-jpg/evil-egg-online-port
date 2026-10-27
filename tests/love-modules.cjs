@@ -35,7 +35,25 @@ const moduleConfig = {
     },
     preRun: [module => module.FS_createDataFile('/test.love', null, bytes, true, true, true)]
 };
-context.Love(moduleConfig).catch(error => {
+function fail(error) {
     console.error(error);
     process.exitCode = 1;
-});
+}
+if (process.argv.includes('--loader')) {
+    // Exercise the production archive repair, malloc, filesystem installation,
+    // dependency release, and Lua startup together, with graphics disabled.
+    Object.assign(context, {
+        setFocus() {},
+        drawLoadingStatus() {},
+        onException: fail,
+        fetch: async () => ({
+            ok: true,
+            arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+        })
+    });
+    const loader = fs.readFileSync('game.js', 'utf8')
+        .replace('var expected = 57602080;', `var expected = ${bytes.length};`);
+    vm.runInContext(loader, context);
+} else {
+    context.Love(moduleConfig).catch(fail);
+}

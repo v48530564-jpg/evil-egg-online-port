@@ -110,6 +110,25 @@ function love.run() return function() return 0 end end
         self.assertEqual(result.returncode, 0, result.stdout.decode(errors="replace"))
         self.assertIn(b"PASS: table modules load and work", result.stdout)
 
+    def test_full_archive_through_production_loader(self):
+        # Retain every real archive entry. Only replace the game entry points
+        # with the graphics-disabled smoke test so Node can run it.
+        output = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(self.original)) as original:
+            with zipfile.ZipFile(io.BytesIO(self.lua_fixture())) as fixture:
+                with zipfile.ZipFile(output, "w") as smoke:
+                    for entry in original.infolist():
+                        data = fixture.read(entry.filename) if entry.filename in ("conf.lua", "main.lua") else original.read(entry)
+                        smoke.writestr(entry, data)
+        result = subprocess.run(
+            ["node", "tests/love-modules.cjs", "--loader"],
+            input=output.getvalue(), stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, cwd=ROOT, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode(errors="replace"))
+        self.assertIn(b"/game.love installed", result.stdout)
+        self.assertIn(b"PASS: table modules load and work", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
